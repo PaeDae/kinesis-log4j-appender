@@ -20,8 +20,8 @@ import org.joda.time.Period;
 import org.joda.time.format.PeriodFormat;
 
 import com.amazonaws.handlers.AsyncHandler;
-import com.amazonaws.services.kinesis.model.PutRecordRequest;
-import com.amazonaws.services.kinesis.model.PutRecordResult;
+import com.amazonaws.services.kinesisfirehose.model.PutRecordRequest;
+import com.amazonaws.services.kinesisfirehose.model.PutRecordResult;
 
 /**
  * Gathers information on how many put requests made by AWS SDK's async client,

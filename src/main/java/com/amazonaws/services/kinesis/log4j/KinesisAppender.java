@@ -40,10 +40,14 @@ import com.amazonaws.services.kinesis.model.DescribeStreamResult;
 import com.amazonaws.services.kinesis.model.PutRecordRequest;
 import com.amazonaws.services.kinesis.model.ResourceNotFoundException;
 import com.amazonaws.services.kinesis.model.StreamStatus;
+import com.amazonaws.services.kinesisfirehose.AmazonKinesisFirehoseAsyncClient;
+import com.amazonaws.services.kinesisfirehose.model.DescribeDeliveryStreamRequest;
+import com.amazonaws.services.kinesisfirehose.model.DescribeDeliveryStreamResult;
+import com.amazonaws.services.kinesisfirehose.model.Record;
 
 /**
  * Log4J Appender implementation to support sending data from java applications
- * directly into a Kinesis stream.
+ * directly into a Kinesis Firehose stream.
  * 
  * More details are available <a
  * href="https://github.com/awslabs/kinesis-log4j-appender">here</a>
@@ -60,7 +64,7 @@ public class KinesisAppender extends AppenderSkeleton {
   private String streamName;
   private boolean initializationFailed = false;
   private BlockingQueue<Runnable> taskBuffer;
-  private AmazonKinesisAsyncClient kinesisClient;
+  private AmazonKinesisFirehoseAsyncClient kinesisClient;
   private AsyncPutCallStatsReporter asyncCallHander;
 
   private void error(String message) {
@@ -151,7 +155,7 @@ public class KinesisAppender extends AppenderSkeleton {
     ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(threadCount, threadCount,
         AppenderConstants.DEFAULT_THREAD_KEEP_ALIVE_SEC, TimeUnit.SECONDS, taskBuffer, new BlockFastProducerPolicy());
     threadPoolExecutor.prestartAllCoreThreads();
-    kinesisClient = new AmazonKinesisAsyncClient(new CustomCredentialsProviderChain(), clientConfiguration,
+    kinesisClient = new AmazonKinesisFirehoseAsyncClient(new CustomCredentialsProviderChain(), clientConfiguration,
         threadPoolExecutor);
 
     boolean regionProvided = !Validator.isBlank(region);
@@ -172,10 +176,12 @@ public class KinesisAppender extends AppenderSkeleton {
       kinesisClient.setRegion(Region.getRegion(Regions.fromName(region)));
     }
 
-    DescribeStreamResult describeResult = null;
+    DescribeDeliveryStreamResult describeResult = null;
     try {
-      describeResult = kinesisClient.describeStream(streamName);
-      String streamStatus = describeResult.getStreamDescription().getStreamStatus();
+      DescribeDeliveryStreamRequest describeRequest = new DescribeDeliveryStreamRequest();
+      describeRequest.withDeliveryStreamName(streamName);
+      describeResult = kinesisClient.describeDeliveryStream(describeRequest);
+      String streamStatus = describeResult.getDeliveryStreamDescription().getDeliveryStreamStatus();
       if (!StreamStatus.ACTIVE.name().equals(streamStatus) && !StreamStatus.UPDATING.name().equals(streamStatus)) {
         initializationFailed = true;
         error("Stream " + streamName + " is not ready (in active/updating status) for appender: " + name);
@@ -244,8 +250,10 @@ public class KinesisAppender extends AppenderSkeleton {
     try {
       String message = layout.format(logEvent);
       ByteBuffer data = ByteBuffer.wrap(message.getBytes(encoding));
-      kinesisClient.putRecordAsync(new PutRecordRequest().withPartitionKey(UUID.randomUUID().toString())
-          .withStreamName(streamName).withData(data), asyncCallHander);
+      Record record = new Record();
+      record.setData(data);
+      kinesisClient.putRecordAsync(new com.amazonaws.services.kinesisfirehose.model.PutRecordRequest().withDeliveryStreamName(streamName)
+          .withRecord(record), asyncCallHander);
     } catch (Exception e) {
       LOGGER.error("Failed to schedule log entry for publishing into Kinesis stream: " + streamName);
       errorHandler.error("Failed to schedule log entry for publishing into Kinesis stream: " + streamName, e,
